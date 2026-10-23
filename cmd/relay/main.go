@@ -14,6 +14,7 @@ import (
 	"github.com/pj-hoakari/jetstream-http-push/internal/infra/httpapi"
 	"github.com/pj-hoakari/jetstream-http-push/internal/logging"
 	"github.com/pj-hoakari/jetstream-http-push/internal/relay"
+	"github.com/pj-hoakari/jetstream-http-push/internal/telemetry"
 )
 
 const (
@@ -43,13 +44,23 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	shutdownTracing, err := telemetry.Setup(ctx)
+	if err != nil {
+		return fmt.Errorf("setup tracing: %w", err)
+	}
+	defer shutdownTracingWithTimeout(shutdownTracing)
+
+	if telemetry.Enabled() {
+		slog.Info("tracing enabled", "service", telemetry.ServiceName())
+	}
+
 	rel, err := relay.New(cfg)
 	if err != nil {
 		return err
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	addr := getenv("SERVER_ADDR", defaultAddr)
 	httpServer := &http.Server{
@@ -82,6 +93,15 @@ func run() error {
 	defer cancel()
 
 	return errors.Join(runErr, httpServer.Shutdown(shutdownCtx), <-serveErr)
+}
+
+func shutdownTracingWithTimeout(shutdown telemetry.ShutdownFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := shutdown(ctx); err != nil {
+		slog.Error("shutdown tracing failed", "error", err)
+	}
 }
 
 func getenv(key, fallback string) string {
