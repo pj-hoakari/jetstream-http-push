@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -30,9 +31,19 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		return Config{}, errors.New("NATS_URL is required")
 	}
 
-	subscriptions, err := parseSubscriptions(getenv("SUBSCRIPTIONS"))
+	path := getenv("SUBSCRIPTIONS_FILE")
+	if path == "" {
+		return Config{}, errors.New("SUBSCRIPTIONS_FILE is required")
+	}
+
+	raw, err := os.ReadFile(path) //nolint:gosec // the path is operator configuration read once at startup, never request input
 	if err != nil {
-		return Config{}, fmt.Errorf("SUBSCRIPTIONS: %w", err)
+		return Config{}, fmt.Errorf("SUBSCRIPTIONS_FILE: %w", err)
+	}
+
+	subscriptions, err := parseSubscriptions(string(raw))
+	if err != nil {
+		return Config{}, fmt.Errorf("SUBSCRIPTIONS_FILE %s: %w", path, err)
 	}
 
 	nakDelay := defaultNakDelay
