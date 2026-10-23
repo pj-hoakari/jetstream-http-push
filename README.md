@@ -15,6 +15,10 @@ NATS JetStream から購読側の HTTP の受け口へ push する中継
 consumer の未 ack は 1 件に限る（`MaxAckPending=1`）ので、同じトピックの次のメッセージは先のメッセージが ack されるまで届かない  
 再送に上限はなく、デッドレターも置かない
 
+配信の試行ごとに consumer の span を 1 つ記録する。再送された配信も別の span になる  
+メッセージの NATS ヘッダーに `traceparent` があれば publish 側のトレースを続け、受け口へのリクエストにも同じトレースの `traceparent` を付ける  
+`traceparent` の引き継ぎは span を export しないときも行う
+
 ## 開発
 
 ### セットアップ
@@ -53,7 +57,20 @@ e2e テストのコンテナは受け口を `:8080` で待ち受け、Watermill 
 | `NAK_DELAY` | `5s` | 受け口が失敗したメッセージを再送するまでの待ち時間。`time.ParseDuration` が解釈する形式の正の値 |
 | `SERVER_ADDR` | `:8080` | `GET /healthz` と `GET /readyz` を待ち受けるアドレス。`/readyz` はすべての購読が始まり、NATS への接続がすべてつながっているときだけ 200 を返す |
 | `LOG_LEVEL` | `info` | ログに出力する最小レベル。`debug`／`info`／`warn`（`warning` も同義）／`error`／`critical` を取り、未知の値なら起動しない |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | なし | どちらかを設定したときだけ OTLP/HTTP で span を export する。未設定ならトレーシングは無効 |
+| `OTEL_SERVICE_NAME` | `jetstream-http-push` | トレースの `service.name` |
 
 ストリームがなければ `topic` の名前で作り、あれば設定を変えずに使う  
 Kubernetes では ConfigMap をマウントしたファイルを `SUBSCRIPTIONS_FILE` に指定できる。購読の変更を反映するには Pod を作り直す（`kubectl rollout restart` など）  
+ヘッダー・TLS・タイムアウトなどその他の `OTEL_EXPORTER_OTLP_*` は exporter がそのまま解釈する  
 ログは標準出力へ 1 行 1 件の JSON で書き出す
+
+### トレースの確認（Jaeger）
+
+オーバーライドファイル `compose.o11y.yml` を重ねると Jaeger が起動し、中継に `OTEL_EXPORTER_OTLP_ENDPOINT` と `OTEL_SERVICE_NAME` が設定される
+
+```bash
+task up:build:o11y
+```
+
+Jaeger UI は `http://localhost:16686`（停止は `task down:o11y`）
