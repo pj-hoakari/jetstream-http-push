@@ -1,0 +1,39 @@
+name: Test
+
+on:
+    pull_request:
+    push:
+        branches: [main]
+
+permissions:
+    contents: read
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  fetch-depth: 0
+
+            - name: Detect changes
+              id: changes
+              uses: pj-hoakari/actions/detect-changes@92b346752a66ad19a36fbc929191603f72e00fe9 # v20261020.0.2
+              with:
+                  paths: |
+                      **/*.go
+                      go.mod
+                      go.sum
+                      .github/workflows/test.yml
+
+            - name: Set up Go
+              if: steps.changes.outputs.changed == 'true'
+              uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Run tests
+              if: steps.changes.outputs.changed == 'true'
+              run: go test ./...

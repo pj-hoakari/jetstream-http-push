@@ -1,0 +1,17 @@
+.git
+.gitignore
+.github
+
+mise.toml
+lefthook.yml
+renovate.json
+.golangci.yml
+
+Dockerfile
+.dockerignore
+compose.yaml
+
+*.md
+
+.task
+Taskfile.yml

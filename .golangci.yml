@@ -1,0 +1,60 @@
+version: "2"
+
+run:
+    build-tags:
+        - e2e
+
+linters:
+    default: standard
+    enable:
+        - wsl_v5
+        - bodyclose
+        - contextcheck
+        - fatcontext
+        - containedctx
+        - exhaustruct_v5
+        - exhaustive
+        - forbidigo
+        - gosec
+        - nilnil
+        - nilerr
+        - nlreturn
+    settings:
+        errcheck:
+            check-type-assertions: true
+            check-blank: true
+            disable-default-exclusions: true
+            exclude-functions:
+                - fmt.Print
+                - fmt.Printf
+                - fmt.Println
+        forbidigo:
+            forbid:
+                - pattern: '^log\.[A-Z]\w*$'
+                  msg: "use log/slog (internal/logging) instead of the standard log package"
+        exhaustruct_v5:
+            ignore-patterns:
+                - 'crypto/tls\.Config'
+                - 'log/slog\.HandlerOptions'
+                - 'net/http\.Server'
+                - 'net/http\.Client'
+                - 'net/http\.Transport'
+                - 'github\.com/nats-io/nats\.go/jetstream\.StreamConfig'
+                - 'github\.com/nats-io/nats\.go/jetstream\.ConsumerConfig'
+                - 'github\.com/ThreeDotsLabs/watermill-nats/v2/pkg/jetstream\.SubscriberConfig'
+                - 'github\.com/ThreeDotsLabs/watermill/message\.RouterConfig'
+        wsl_v5:
+            allow-first-in-block: true
+            allow-whole-block: false
+            branch-max-lines: 2
+    exclusions:
+        rules:
+            - path: _test\.go
+              linters:
+                  - errcheck
+                  - exhaustruct_v5
+                  - forbidigo
+                  - gosec
+                  - staticcheck
+                  - fatcontext
+                  - containedctx

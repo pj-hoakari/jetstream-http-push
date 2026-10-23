@@ -1,0 +1,12 @@
+pre-commit:
+    parallel: true
+    jobs:
+        - name: Scan credential leaks
+          run: mise exec -- betterleaks git --pre-commit --redact --staged --verbose
+
+        - name: Apply golangci-lint
+          glob:
+            - "*.go"
+            - ".golangci.yml"
+          run: mise exec -- golangci-lint run --config .golangci.yml --fix
+          stage_fixed: true
