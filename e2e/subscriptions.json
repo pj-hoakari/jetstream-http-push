@@ -5,5 +5,6 @@
     {"name": "ordering", "topic": "e2e-ordering", "url": "http://e2e:8080/ordering"},
     {"name": "fanout-a", "topic": "e2e-fanout", "url": "http://e2e:8080/fanout-a"},
     {"name": "fanout-b", "topic": "e2e-fanout", "url": "http://e2e:8080/fanout-b"},
-    {"name": "deliver-new", "topic": "e2e-deliver-new", "url": "http://e2e:8080/deliver-new"}
+    {"name": "deliver-new", "topic": "e2e-deliver-new", "url": "http://e2e:8080/deliver-new"},
+    {"name": "trace", "topic": "e2e-trace", "url": "http://e2e:8080/trace"}
 ]

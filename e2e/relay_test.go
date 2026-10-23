@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -186,6 +187,23 @@ func TestRelay(t *testing.T) {
 		case <-time.After(waitTimeout):
 		}
 	})
+
+	t.Run("publish 側の traceparent は受け口へ同じトレース ID で引き継がれる", func(t *testing.T) {
+		t.Parallel()
+
+		const traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+		deliveries := endpoint(t, "/trace", alwaysRespond(http.StatusOK))
+		msg := message.NewMessage(watermill.NewUUID(), []byte("traced"))
+		msg.Metadata.Set("traceparent", "00-"+traceID+"-00f067aa0ba902b7-01")
+		send(t, "e2e-trace", msg)
+
+		got := next(t, deliveries)
+
+		if fields := strings.Split(got.traceparent, "-"); len(fields) != 4 || fields[1] != traceID {
+			t.Errorf("traceparent = %q, want the trace ID %s", got.traceparent, traceID)
+		}
+	})
 }
 
 type delivery struct {
@@ -193,6 +211,7 @@ type delivery struct {
 	orderingKey string
 	publishTime string
 	contentType string
+	traceparent string
 	body        []byte
 }
 
@@ -221,6 +240,7 @@ func endpoint(t *testing.T, path string, respond func(d delivery, attempt int) i
 			orderingKey: r.Header.Get("x-goog-pubsub-ordering-key"),
 			publishTime: r.Header.Get("x-goog-pubsub-publish-time"),
 			contentType: r.Header.Get("Content-Type"),
+			traceparent: r.Header.Get("traceparent"),
 			body:        body,
 		}
 
@@ -253,6 +273,16 @@ func next(t *testing.T, deliveries <-chan delivery) delivery {
 func publish(t *testing.T, topic string, payload []byte, eventID string) string {
 	t.Helper()
 
+	msg := message.NewMessage(watermill.NewUUID(), payload)
+	msg.Metadata.Set("event_id", eventID)
+	send(t, topic, msg)
+
+	return msg.UUID
+}
+
+func send(t *testing.T, topic string, msg *message.Message) {
+	t.Helper()
+
 	conn, err := nats.Connect(natsURL)
 	if err != nil {
 		t.Fatalf("connect to NATS: %v", err)
@@ -283,14 +313,9 @@ func publish(t *testing.T, topic string, payload []byte, eventID string) string 
 		t.Fatalf("create NATS JetStream publisher: %v", err)
 	}
 
-	msg := message.NewMessage(watermill.NewUUID(), payload)
-	msg.Metadata.Set("event_id", eventID)
-
 	if err := publisher.Publish(topic, msg); err != nil {
 		t.Fatalf("publish to %s: %v", topic, err)
 	}
-
-	return msg.UUID
 }
 
 func waitForReady(timeout time.Duration) error {

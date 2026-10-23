@@ -15,6 +15,13 @@ import (
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	"github.com/nats-io/nats.go"
 	natsjetstream "github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/pj-hoakari/jetstream-http-push/internal/infra/httpapi"
 )
@@ -66,7 +73,11 @@ func relayed(t *testing.T, msg natsjetstream.Msg, target *url.URL) error {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	return deliverTo(newClient(), target)(m)
+	return deliverTo(newClient(), subscription(target))(m)
+}
+
+func subscription(target *url.URL) Subscription {
+	return Subscription{Name: "guest-status-push", Topic: "guest-status", URL: target}
 }
 
 func TestDelivery(t *testing.T) {
@@ -168,7 +179,7 @@ func TestDelivery(t *testing.T) {
 			target, _ := url.Parse(server.URL)
 			msg := message.NewMessage("uuid-1", payload)
 
-			err := deliverTo(newClient(), target)(msg)
+			err := deliverTo(newClient(), subscription(target))(msg)
 			if acked := err == nil; acked != wantAck {
 				t.Errorf("status %d: error = %v, want ack = %v", status, err, wantAck)
 			}
@@ -182,8 +193,129 @@ func TestDelivery(t *testing.T) {
 		target, _ := url.Parse(server.URL)
 		server.Close()
 
-		if err := deliverTo(newClient(), target)(message.NewMessage("uuid-1", payload)); err == nil {
+		if err := deliverTo(newClient(), subscription(target))(message.NewMessage("uuid-1", payload)); err == nil {
 			t.Error("error = nil, want a transport error")
+		}
+	})
+}
+
+func recordSpans(t *testing.T) *tracetest.SpanRecorder {
+	t.Helper()
+
+	recorder := tracetest.NewSpanRecorder()
+	provider, propagator := otel.GetTracerProvider(), otel.GetTextMapPropagator()
+
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)))
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() {
+		otel.SetTracerProvider(provider)
+		otel.SetTextMapPropagator(propagator)
+	})
+
+	return recorder
+}
+
+func onlySpan(t *testing.T, recorder *tracetest.SpanRecorder) sdktrace.ReadOnlySpan {
+	t.Helper()
+
+	spans := recorder.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("ended spans = %d, want 1", len(spans))
+	}
+
+	return spans[0]
+}
+
+func TestDeliveryTracing(t *testing.T) {
+	newMsg := func(headers nats.Header) jetStreamMsg {
+		headers.Set("_watermill_message_uuid", "uuid-1")
+
+		return jetStreamMsg{
+			data:     []byte("payload"),
+			headers:  headers,
+			metadata: &natsjetstream.MsgMetadata{Timestamp: time.Now(), Sequence: natsjetstream.SequencePair{Stream: 42}},
+		}
+	}
+
+	t.Run("records one consumer span for the delivery attempt", func(t *testing.T) {
+		recorder := recordSpans(t)
+		target, _ := receiver(t, http.StatusOK)
+
+		if err := relayed(t, newMsg(nats.Header{}), target); err != nil {
+			t.Fatalf("delivery error = %v, want nil", err)
+		}
+
+		span := onlySpan(t, recorder)
+
+		if span.Name() != "process guest-status" || span.SpanKind() != trace.SpanKindConsumer {
+			t.Errorf("span = %q (%s), want process guest-status (consumer)", span.Name(), span.SpanKind())
+		}
+
+		attrs := attribute.NewSet(span.Attributes()...)
+		for key, want := range map[attribute.Key]string{
+			"messaging.system":              "nats",
+			"messaging.operation.type":      "process",
+			"messaging.destination.name":    "guest-status",
+			"messaging.consumer.group.name": "guest-status-push",
+			"messaging.message.id":          "uuid-1",
+			"url.full":                      target.String(),
+			"http.response.status_code":     "200",
+		} {
+			if got, ok := attrs.Value(key); !ok || got.Emit() != want {
+				t.Errorf("%s = %q (set %v), want %q", key, got.Emit(), ok, want)
+			}
+		}
+
+		if span.Status().Code != codes.Unset {
+			t.Errorf("status = %v, want unset", span.Status())
+		}
+
+		if span.Parent().IsValid() {
+			t.Errorf("parent = %v, want a root span for a message without a traceparent", span.Parent())
+		}
+	})
+
+	t.Run("marks the span as an error when the receiver does not return 2xx", func(t *testing.T) {
+		recorder := recordSpans(t)
+		target, _ := receiver(t, http.StatusInternalServerError)
+
+		if err := relayed(t, newMsg(nats.Header{}), target); err == nil {
+			t.Fatal("delivery error = nil, want the 500 as an error")
+		}
+
+		span := onlySpan(t, recorder)
+
+		if span.Status().Code != codes.Error {
+			t.Errorf("status = %v, want error", span.Status())
+		}
+
+		attrs := attribute.NewSet(span.Attributes()...)
+		if got, _ := attrs.Value("http.response.status_code"); got.AsInt64() != http.StatusInternalServerError {
+			t.Errorf("http.response.status_code = %v, want 500", got.Emit())
+		}
+	})
+
+	t.Run("continues the trace of the message and passes it to the receiver", func(t *testing.T) {
+		const traceID, parentSpanID = "0af7651916cd43dd8448eb211c80319c", "b7ad6b7169203331"
+
+		recorder := recordSpans(t)
+		target, got := receiver(t, http.StatusOK)
+
+		msg := newMsg(nats.Header{"traceparent": {"00-" + traceID + "-" + parentSpanID + "-01"}})
+		if err := relayed(t, msg, target); err != nil {
+			t.Fatalf("delivery error = %v, want nil", err)
+		}
+
+		span := onlySpan(t, recorder)
+
+		if span.SpanContext().TraceID().String() != traceID || span.Parent().SpanID().String() != parentSpanID {
+			t.Errorf("span trace %s, parent %s, want trace %s, parent %s",
+				span.SpanContext().TraceID(), span.Parent().SpanID(), traceID, parentSpanID)
+		}
+
+		want := "00-" + traceID + "-" + span.SpanContext().SpanID().String() + "-01"
+		if traceparent := (<-got).header.Get("traceparent"); traceparent != want {
+			t.Errorf("receiver traceparent = %q, want %q", traceparent, want)
 		}
 	})
 }
