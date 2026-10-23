@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,6 +185,18 @@ func TestDelivery(t *testing.T) {
 
 		if err := deliverTo(newClient(), target)(message.NewMessage("uuid-1", payload)); err == nil {
 			t.Error("error = nil, want a transport error")
+		}
+	})
+
+	t.Run("a failure does not reveal the password in the endpoint URL", func(t *testing.T) {
+		t.Parallel()
+
+		target, _ := receiver(t, http.StatusInternalServerError)
+		target.User = url.UserPassword("relay", "s3cret")
+
+		err := deliverTo(newClient(), target)(message.NewMessage("uuid-1", payload))
+		if err == nil || strings.Contains(err.Error(), "s3cret") {
+			t.Errorf("error = %v, want a failure without the password", err)
 		}
 	})
 }

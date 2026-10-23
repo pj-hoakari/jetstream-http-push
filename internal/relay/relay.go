@@ -171,7 +171,7 @@ func deliverTo(client *http.Client, target *url.URL) message.NoPublishHandlerFun
 	return func(msg *message.Message) error {
 		req, err := http.NewRequestWithContext(msg.Context(), http.MethodPost, target.String(), bytes.NewReader(msg.Payload))
 		if err != nil {
-			return fmt.Errorf("build the request to %s: %w", target, err)
+			return fmt.Errorf("build the request to %s: %w", target.Redacted(), err)
 		}
 
 		req.Header.Set("Content-Type", "application/octet-stream")
@@ -184,21 +184,21 @@ func deliverTo(client *http.Client, target *url.URL) message.NoPublishHandlerFun
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return fmt.Errorf("post to %s: %w", target, err)
+			return fmt.Errorf("post to %s: %w", target.Redacted(), err)
 		}
 
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				slog.WarnContext(msg.Context(), "closing the response body failed", "url", target.String(), "error", err)
+				slog.WarnContext(msg.Context(), "closing the response body failed", "url", target.Redacted(), "error", err)
 			}
 		}()
 
 		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-			slog.WarnContext(msg.Context(), "draining the response body failed", "url", target.String(), "error", err)
+			slog.WarnContext(msg.Context(), "draining the response body failed", "url", target.Redacted(), "error", err)
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode > 299 {
-			return fmt.Errorf("%s responded %s", target, resp.Status)
+			return fmt.Errorf("%s responded %s", target.Redacted(), resp.Status)
 		}
 
 		return nil
