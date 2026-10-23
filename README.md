@@ -49,10 +49,11 @@ e2e テストのコンテナは受け口を `:8080` で待ち受け、Watermill 
 | 環境変数 | デフォルト | 内容 |
 | --- | --- | --- |
 | `NATS_URL` | なし（必須） | NATS の接続先 |
-| `SUBSCRIPTIONS` | なし（必須） | 購読の JSON 配列。要素は `{"name": "...", "topic": "...", "url": "..."}` で、`name` は durable consumer の名前、`topic` はストリームと subject の名前、`url` は受け口の http または https の絶対 URL。`name` の重複、JetStream の名前に使えない文字（`.`、`*`、`>`、空白、`/`、`\`）、未知のフィールドがあると起動しない |
+| `SUBSCRIPTIONS_FILE` | なし（必須） | 購読を書いた JSON ファイルのパス。中身は購読の JSON 配列で、要素は `{"name": "...", "topic": "...", "url": "..."}`。`name` は durable consumer の名前、`topic` はストリームと subject の名前、`url` は受け口の http または https の絶対 URL。ファイルを読めない、`name` が重複する、JetStream の名前に使えない文字（`.`、`*`、`>`、空白、`/`、`\`）や未知のフィールドがある、のいずれかなら起動しない。ファイルは起動時にだけ読む |
 | `NAK_DELAY` | `5s` | 受け口が失敗したメッセージを再送するまでの待ち時間。`time.ParseDuration` が解釈する形式の正の値 |
 | `SERVER_ADDR` | `:8080` | `GET /healthz` と `GET /readyz` を待ち受けるアドレス。`/readyz` はすべての購読が始まり、NATS への接続がすべてつながっているときだけ 200 を返す |
 | `LOG_LEVEL` | `info` | ログに出力する最小レベル。`debug`／`info`／`warn`（`warning` も同義）／`error`／`critical` を取り、未知の値なら起動しない |
 
 ストリームがなければ `topic` の名前で作り、あれば設定を変えずに使う  
+Kubernetes では ConfigMap をマウントしたファイルを `SUBSCRIPTIONS_FILE` に指定できる。購読の変更を反映するには Pod を作り直す（`kubectl rollout restart` など）  
 ログは標準出力へ 1 行 1 件の JSON で書き出す
