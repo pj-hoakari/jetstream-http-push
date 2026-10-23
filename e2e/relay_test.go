@@ -169,6 +169,23 @@ func TestRelay(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("購読を作る前に publish されたメッセージは届かない", func(t *testing.T) {
+		t.Parallel()
+
+		deliveries := endpoint(t, "/deliver-new", alwaysRespond(http.StatusOK))
+		id := publish(t, "e2e-deliver-new", []byte("after"), "event-deliver-new")
+
+		if got := next(t, deliveries); got.id != id || string(got.body) != "after" {
+			t.Fatalf("first delivery = %q (message-id %q), want after (%q)", got.body, got.id, id)
+		}
+
+		select {
+		case again := <-deliveries:
+			t.Errorf("%q was delivered although it was published before the subscription started", again.body)
+		case <-time.After(waitTimeout):
+		}
+	})
 }
 
 type delivery struct {

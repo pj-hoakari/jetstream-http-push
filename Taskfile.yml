@@ -66,5 +66,5 @@ tasks:
         desc: Run the end-to-end tests against NATS and the relay in compose.
         cmds:
             - defer: docker compose --profile e2e down -v
-            - docker compose --profile e2e up --build --abort-on-container-exit --exit-code-from e2e
+            - docker compose --profile e2e up --build --abort-on-container-exit --exit-code-from e2e --attach relay --attach e2e
 

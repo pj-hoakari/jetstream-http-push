@@ -3,6 +3,7 @@
 NATS JetStream から購読側の HTTP の受け口へ push する中継
 
 購読ごとに durable consumer を持ち、メッセージを 1 件ずつ受け口へ `POST` する  
+購読に届くのは、その consumer を初めて作った後に publish されたメッセージだけで、中継を再起動すると続きから届く  
 リクエストは Cloud Pub/Sub の push subscription で payload unwrapping と write metadata を有効にしたときと同じ形にする
 
 - 本文は publish されたペイロードのバイト列で、`Content-Type` は `application/octet-stream`

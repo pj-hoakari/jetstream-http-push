@@ -134,6 +134,7 @@ func durableConsumer(name string) jetstream.ResourceInitializer {
 		consumer, err := stream.CreateOrUpdateConsumer(ctx, natsjetstream.ConsumerConfig{
 			Name:          name,
 			Durable:       name,
+			DeliverPolicy: natsjetstream.DeliverNewPolicy,
 			AckPolicy:     natsjetstream.AckExplicitPolicy,
 			AckWait:       ackWait,
 			MaxAckPending: 1,
