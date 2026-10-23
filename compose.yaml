@@ -1,0 +1,39 @@
+services:
+    nats:
+        image: nats:2-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde
+        command: ["-js", "-m", "8222"]
+        healthcheck:
+            test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8222/healthz?js-enabled-only=true"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+
+    relay:
+        build:
+            context: .
+        environment:
+            NATS_URL: nats://nats:4222
+            NAK_DELAY: 200ms
+            SUBSCRIPTIONS: |
+                [
+                    {"name": "delivery", "topic": "e2e-delivery", "url": "http://e2e:8080/delivery"},
+                    {"name": "ack", "topic": "e2e-ack", "url": "http://e2e:8080/ack"},
+                    {"name": "redelivery", "topic": "e2e-redelivery", "url": "http://e2e:8080/redelivery"},
+                    {"name": "ordering", "topic": "e2e-ordering", "url": "http://e2e:8080/ordering"},
+                    {"name": "fanout-a", "topic": "e2e-fanout", "url": "http://e2e:8080/fanout-a"},
+                    {"name": "fanout-b", "topic": "e2e-fanout", "url": "http://e2e:8080/fanout-b"}
+                ]
+        depends_on:
+            nats:
+                condition: service_healthy
+        ports:
+            - "8080:8080"
+
+    e2e:
+        profiles: [e2e]
+        build:
+            context: .
+            target: e2e
+        depends_on:
+            relay:
+                condition: service_started
