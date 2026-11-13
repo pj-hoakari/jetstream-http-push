@@ -19,7 +19,7 @@ jobs:
 
             - name: Detect changes
               id: changes
-              uses: pj-hoakari/actions/detect-changes@92b346752a66ad19a36fbc929191603f72e00fe9 # v20261020.0.2
+              uses: pj-hoakari/actions/detect-changes@e0ffe48f766307783a545c33bc29d58362094572 # v20261113.0.0
               with:
                   paths: |
                       **/*.go
@@ -38,4 +38,4 @@ jobs:
 
             - name: Run golangci-lint
               if: steps.changes.outputs.changed == 'true'
-              uses: pj-hoakari/actions/go/lint@92b346752a66ad19a36fbc929191603f72e00fe9 # v20261020.0.2
+              uses: pj-hoakari/actions/go/lint@e0ffe48f766307783a545c33bc29d58362094572 # v20261113.0.0
